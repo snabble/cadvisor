@@ -16,14 +16,19 @@ package elasticsearch
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"flag"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"os"
 	"sync"
 	"time"
 
 	info "github.com/google/cadvisor/info/v1"
 	storage "github.com/google/cadvisor/storage"
+	"github.com/pkg/errors"
 
 	"github.com/olivere/elastic/v7"
 )
@@ -52,6 +57,7 @@ var (
 	argIndexName     = flag.String("storage_driver_es_index", "cadvisor", "ElasticSearch index name")
 	argTypeName      = flag.String("storage_driver_es_type", "stats", "ElasticSearch type name")
 	argEnableSniffer = flag.Bool("storage_driver_es_enable_sniffer", false, "ElasticSearch uses a sniffing process to find all nodes of your cluster by default, automatically")
+	argElasticCA     = flag.String("storage_driver_es_ca", "", "ElasticSearch tls ca")
 )
 
 func new() (storage.StorageDriver, error) {
@@ -68,6 +74,7 @@ func new() (storage.StorageDriver, error) {
 		*argTypeName,
 		*argElasticHost,
 		*argEnableSniffer,
+		*argElasticCA,
 		username,
 		password,
 	)
@@ -103,7 +110,7 @@ func (self *elasticStorage) AddStats(cInfo *info.ContainerInfo, stats *info.Cont
 		detail := self.containerStatsAndDefaultValues(cInfo, stats)
 		// Index a cadvisor (using JSON serialization)
 		_, err := self.client.Index().
-			Index(self.indexName).
+			Index(self.currentIndexName()).
 			Type(self.typeName).
 			BodyJson(detail).
 			Do(context.Background())
@@ -121,6 +128,10 @@ func (self *elasticStorage) Close() error {
 	return nil
 }
 
+func (self *elasticStorage) currentIndexName() string {
+	return self.indexName + time.Now().Format("-2006.01.02")
+}
+
 // machineName: A unique identifier to identify the host that current cAdvisor
 // instance is running on.
 // ElasticHost: The host which runs ElasticSearch.
@@ -132,7 +143,13 @@ func newStorage(
 	enableSniffer bool,
 	username string,
 	password string,
+	caPath string,
 ) (storage.StorageDriver, error) {
+	httpClient, err := createHTTPClient(caPath)
+	if err != nil {
+		return nil, err
+	}
+
 	// Obtain a client and connect to the default Elasticsearch installation
 	// on 127.0.0.1:9200. Of course you can configure your client to connect
 	// to other hosts and configure it in various other ways.
@@ -141,6 +158,7 @@ func newStorage(
 		elastic.SetSniff(enableSniffer),
 		elastic.SetHealthcheckInterval(30*time.Second),
 		elastic.SetURL(elasticHost),
+		elastic.SetHttpClient(httpClient),
 		elastic.SetBasicAuth(username, password),
 	)
 	if err != nil {
@@ -164,4 +182,26 @@ func newStorage(
 		typeName:    typeName,
 	}
 	return ret, nil
+}
+
+func createHTTPClient(caPath string) (*http.Client, error) {
+	if caPath == "" {
+		return http.DefaultClient, nil
+	}
+
+	caCert, err := ioutil.ReadFile(caPath)
+	if err != nil {
+		return nil, errors.Wrapf(err, "Could not read Elasticsearch CA from '%s'", caPath)
+	}
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCert)
+
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs: caCertPool,
+			},
+		},
+	}
+	return httpClient, nil
 }
