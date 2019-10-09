@@ -25,7 +25,7 @@ import (
 	info "github.com/google/cadvisor/info/v1"
 	storage "github.com/google/cadvisor/storage"
 
-	"github.com/olivere/elastic"
+	"github.com/olivere/elastic/v7"
 )
 
 func init() {
@@ -59,12 +59,17 @@ func new() (storage.StorageDriver, error) {
 	if err != nil {
 		return nil, err
 	}
+	username := os.Getenv("ES_USERNAME")
+	password := os.Getenv("ES_PASSWORD")
+
 	return newStorage(
 		hostname,
 		*argIndexName,
 		*argTypeName,
 		*argElasticHost,
 		*argEnableSniffer,
+		username,
+		password,
 	)
 }
 
@@ -125,6 +130,8 @@ func newStorage(
 	typeName,
 	elasticHost string,
 	enableSniffer bool,
+	username string,
+	password string,
 ) (storage.StorageDriver, error) {
 	// Obtain a client and connect to the default Elasticsearch installation
 	// on 127.0.0.1:9200. Of course you can configure your client to connect
@@ -134,6 +141,7 @@ func newStorage(
 		elastic.SetSniff(enableSniffer),
 		elastic.SetHealthcheckInterval(30*time.Second),
 		elastic.SetURL(elasticHost),
+		elastic.SetBasicAuth(username, password),
 	)
 	if err != nil {
 		// Handle error
