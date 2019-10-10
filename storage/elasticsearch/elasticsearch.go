@@ -141,9 +141,9 @@ func newStorage(
 	typeName,
 	elasticHost string,
 	enableSniffer bool,
+	caPath string,
 	username string,
 	password string,
-	caPath string,
 ) (storage.StorageDriver, error) {
 	httpClient, err := createHTTPClient(caPath)
 	if err != nil {
