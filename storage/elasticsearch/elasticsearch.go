@@ -110,7 +110,7 @@ func (self *elasticStorage) AddStats(cInfo *info.ContainerInfo, stats *info.Cont
 		detail := self.containerStatsAndDefaultValues(cInfo, stats)
 		// Index a cadvisor (using JSON serialization)
 		_, err := self.client.Index().
-			Index(self.currentIndexName()).
+			Index(self.indexName).
 			Type(self.typeName).
 			BodyJson(detail).
 			Do(context.Background())
@@ -126,10 +126,6 @@ func (self *elasticStorage) AddStats(cInfo *info.ContainerInfo, stats *info.Cont
 func (self *elasticStorage) Close() error {
 	self.client = nil
 	return nil
-}
-
-func (self *elasticStorage) currentIndexName() string {
-	return self.indexName + time.Now().Format("-2006.01.02")
 }
 
 // machineName: A unique identifier to identify the host that current cAdvisor
